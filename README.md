@@ -1,36 +1,48 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Bookstore
 
-## Getting Started
+Full-stack online bookstore. Catalog of 1,000 Project Gutenberg books (via Gutendex) stored in MongoDB Atlas, with cart, wishlist, checkout (COD) and orders.
 
-First, run the development server:
+**Stack:** Next.js (App Router), React, TypeScript, Ant Design, Tailwind, Redux Toolkit, Axios, Mongoose, MongoDB Atlas, JWT, Winston, Swagger. Deployed on Vercel.
+
+## Quick start
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
+cp .env.example .env.local   # fill in MONGODB_URI and JWT_SECRET
+npm run dev                  # http://localhost:3000
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Environment variables
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+See `.env.example`. Real values live only in `.env.local` (never committed).
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+| Variable | Purpose |
+|---|---|
+| `MONGODB_URI` | Atlas connection string, including database name (`/bookstore`) |
+| `JWT_SECRET` | Signs auth tokens |
+| `JWT_EXPIRES_IN` | Token lifetime, e.g. `7d` |
+| `NEXT_PUBLIC_APP_URL` | Public base URL of the app |
 
-## Learn More
+### MongoDB Atlas setup
+1. Create a free cluster.
+2. Database Access: create a user with a strong password.
+3. Network Access: allow your current IP for development.
+4. Connect > Drivers: copy the connection string, add `/bookstore` before the `?`, and URL-encode special characters in the password.
 
-To learn more about Next.js, take a look at the following resources:
+Health check: `GET /api/health`
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Scripts
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+| Script | Purpose |
+|---|---|
+| `npm run dev` | Start dev server |
+| `npm run build` | Production build |
+| `npm run lint` | ESLint |
 
-## Deploy on Vercel
+## Docs
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+- [Architecture](docs/architecture.md)
+- [Build log](docs/build-log.md): what was built, step by step
+- [Review log](docs/review-log.md): code-review findings and fixes
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+_Sections are added here as each step is built._
