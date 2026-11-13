@@ -1,36 +1,40 @@
-import mongoose from "mongoose"
+import mongoose from "mongoose";
+import { env, requireMongoUri } from "@/lib/env";
 
 type MongooseCache = {
-    conn: typeof mongoose | null
-    promise: Promise<typeof mongoose> | null
-}
+  conn: typeof mongoose | null;
+  promise: Promise<typeof mongoose> | null;
+};
 
 const globalForMongoose = globalThis as unknown as {
-    mongooseCache?: MongooseCache
-}
+  mongooseCache?: MongooseCache;
+};
 
 const cache: MongooseCache = (globalForMongoose.mongooseCache ??= {
-    conn: null,
-    promise: null,
-})
+  conn: null,
+  promise: null,
+});
 
 export async function connectDB(): Promise<typeof mongoose> {
-    if(cache.conn) return cache.conn
+  if (cache.conn) return cache.conn;
 
-    const uri = process.env.MONGO_URI
-    if(!uri) throw new Error("MONGODB_URI is not set")
+  const uri = requireMongoUri();
 
-    cache.promise ??= mongoose.connect(uri, {
-        bufferCommands: false,
-        maxPoolSize: 10
-    })
+  cache.promise ??= mongoose.connect(uri, {
+    bufferCommands: false,
+    maxPoolSize: 10,
+    dbName: process.env.MONGODB_DB_NAME || undefined,
+  });
 
-    try{
-        cache.conn = await cache.promise
+  try {
+    cache.conn = await cache.promise;
+    if (!env.isProduction) {
+      console.info("[db] connected");
     }
-    catch(error){
-        cache.promise = null
-        throw error
-    }
-    return cache.conn
+  } catch (error) {
+    // Do not cache a rejected promise; the next request should retry.
+    cache.promise = null;
+    throw error;
+  }
+  return cache.conn;
 }

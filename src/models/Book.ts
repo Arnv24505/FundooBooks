@@ -24,11 +24,13 @@ const bookSchema = new Schema(
         isbn: String,
         description: String,
         publisher: String,
+        binding: String,
         price: {type: Number, min:0},
         originalPrice: { type: Number, min: 0 },
         stock: { type: Number, min: 0, default: 0 },
         rating: { type: Number, min: 0, max: 5 },
         reviewCount: { type: Number, min: 0, default: 0 },
+        isDemoData: { type: Boolean, default: false },
     },
     { timestamps: true }
 )

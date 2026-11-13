@@ -1,54 +1,69 @@
-import { connectDB } from "@/lib/db"
-import { Book } from "@/models/Book"
-import mongoose from "mongoose"
+import { connectDB } from "@/lib/db";
+import { Book } from "@/models/Book";
+import {
+  demoOriginalPriceFor,
+  demoPriceFor,
+  demoRatingFor,
+  demoStockFor,
+} from "@/lib/money";
+import mongoose from "mongoose";
 
-const START_URL = "https://gutendex.com/books/?sort=ascending"
-const TRUSTED_HOST = "gutendex.com"
-const TARGET = 1000
-const MAX_ATTEMPTS = 4
-const TIMEOUT_MS = 60_000
-const PAGE_DELAY_MS = 500
-const MAX_CONSECUTIVE_FAILURES = 3
+/**
+ * Imports exactly 1,000 unique Project Gutenberg books from Gutendex.
+ *
+ * Gutendex supplies metadata only. Prices, stock and ratings are storefront
+ * fields derived deterministically from the Gutenberg id and marked as demo
+ * data (`isDemoData: true`) so we never claim Gutendex published prices.
+ */
+
+const START_URL = "https://gutendex.com/books/?sort=ascending";
+const TRUSTED_HOST = "gutendex.com";
+const TARGET = 1000;
+const MAX_ATTEMPTS = 4;
+const TIMEOUT_MS = 60_000;
+const PAGE_DELAY_MS = 400;
+const MAX_CONSECUTIVE_FAILURES = 3;
 
 type GutendexBook = {
-    id: number
-    title: string
-    authors: {name:string; birth_year: number|null; death_year: number|null}[]
-    subjects: string[]
-    languages: string[]
-    formats: Record<string, string>
-    download_count: number
-}
+  id: number;
+  title: string;
+  authors: { name: string; birth_year: number | null; death_year: number | null }[];
+  subjects: string[];
+  languages: string[];
+  formats: Record<string, string>;
+  download_count: number;
+  summaries?: string[];
+};
 
 type GutendexPage = {
-    count: number
-    next:string|null
-    previous: string|null
-    results: GutendexBook[]
-}
+  count: number;
+  next: string | null;
+  previous: string | null;
+  results: GutendexBook[];
+};
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function fetchPage(url: string): Promise<GutendexPage> {
-    for(let attempt = 1; ; attempt++){
-        try{
-            const response = await fetch(url, {signal: AbortSignal.timeout(TIMEOUT_MS)})
-            if(!response.ok) throw new Error(`HTTP ${response.status}`)
-            return (await response.json()) as GutendexPage
-        }catch(error){
-            if(attempt>=MAX_ATTEMPTS) throw error
-            const wait = 1000*2**(attempt-1)
-            const reason = error instanceof(Error) ? error.message:String(error)
-            console.warn(`Attempt ${attempt} failed (${reason}). Retrying in ${wait} ms...`)
-            await sleep(wait)
-        }
+  for (let attempt = 1; ; attempt++) {
+    try {
+      const response = await fetch(url, { signal: AbortSignal.timeout(TIMEOUT_MS) });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      return (await response.json()) as GutendexPage;
+    } catch (error) {
+      if (attempt >= MAX_ATTEMPTS) throw error;
+      const wait = 1000 * 2 ** (attempt - 1);
+      const reason = error instanceof Error ? error.message : String(error);
+      console.warn(`Attempt ${attempt} failed (${reason}). Retrying in ${wait} ms...`);
+      await sleep(wait);
     }
+  }
 }
 
-function assertTrusted(url: string): void{
-    if(new URL(url).hostname!==TRUSTED_HOST) {
-        throw new Error(`Refusing to follow unexpected URL: ${url}`)
-    }
+function assertTrusted(url: string): void {
+  if (new URL(url).hostname !== TRUSTED_HOST) {
+    throw new Error(`Refusing to follow unexpected URL: ${url}`);
+  }
 }
 
 function nextPageUrl(url: string): string {
@@ -58,36 +73,56 @@ function nextPageUrl(url: string): string {
   return parsed.toString();
 }
 
-function toBookFields(book: GutendexBook){
-    return {
-        sourceId: book.id,
-        title: book.title,
-        authors: book.authors.map((author)=> ({
-            name: author.name,
-            birthYear: author.birth_year??undefined,
-            deathYear: author.birth_year??undefined
-        })),
-        subjects: book.subjects,
-        languages: book.languages,
-        coverImage: book.formats["image/jpeg"],
-        formats: new Map(
-            Object.entries(book.formats).map(([key, value]) => [key.replaceAll(".", "_"), value])
-        ),
-        downloadCount: book.download_count,
-    };
+function buildDescription(book: GutendexBook): string {
+  const summary = book.summaries?.find((entry) => entry.trim().length > 40);
+  if (summary) return summary.trim();
+  const subjects = book.subjects.slice(0, 4).join(", ");
+  const author = book.authors[0]?.name ?? "an unknown author";
+  return `${book.title} by ${author}. ${
+    subjects ? `This Project Gutenberg edition explores ${subjects}. ` : ""
+  }Downloaded ${book.download_count.toLocaleString("en-IN")} times from the Gutenberg archive.`;
 }
 
-async function upsertBooks(books: GutendexBook[]){
-    return Book.bulkWrite(
-        books.map((book)=>({
-            updateOne: {
-                filter: {sourceId: book.id},
-                update: {$set: toBookFields(book)},
-                upsert: true,
-            },
-        })),
-        {ordered: false}
-    );
+function toBookFields(book: GutendexBook) {
+  const price = demoPriceFor(book.id);
+  return {
+    sourceId: book.id,
+    title: book.title,
+    authors: book.authors.map((author) => ({
+      name: author.name,
+      birthYear: author.birth_year ?? undefined,
+      deathYear: author.death_year ?? undefined,
+    })),
+    subjects: book.subjects,
+    languages: book.languages,
+    coverImage: book.formats["image/jpeg"],
+    formats: new Map(
+      Object.entries(book.formats).map(([key, value]) => [key.replaceAll(".", "_"), value])
+    ),
+    downloadCount: book.download_count,
+    description: buildDescription(book),
+    publisher: "Project Gutenberg",
+    binding: "Paperback",
+    price,
+    originalPrice: demoOriginalPriceFor(price),
+    stock: demoStockFor(book.id),
+    rating: demoRatingFor(book.id),
+    reviewCount: 0,
+    isDemoData: true,
+  };
+}
+
+async function upsertBooks(books: GutendexBook[]) {
+  return Book.bulkWrite(
+    books.map((book) => ({
+      updateOne: {
+        filter: { sourceId: book.id },
+        update: { $set: toBookFields(book) },
+        upsert: true,
+      },
+    })),
+    { ordered: false }
+  );
 }
 
 async function main() {
@@ -101,11 +136,11 @@ async function main() {
   let page = 0;
 
   while (url && collected.size < TARGET) {
-    const currentUrl: string = url
+    const currentUrl: string = url;
     assertTrusted(currentUrl);
     page++;
     try {
-      const data = await fetchPage(url);
+      const data = await fetchPage(currentUrl);
       data.results.forEach((book) => collected.set(book.id, book));
       consecutiveFailures = 0;
       console.log(`Page ${page}: ${collected.size} collected`);
@@ -117,8 +152,8 @@ async function main() {
         throw new Error(`Gutendex looks unavailable (last error: ${reason})`);
       }
       console.warn(`Page ${page} failed (${reason}). Skipping to the next page.`);
-      skipped.push(url);
-      url = nextPageUrl(url);
+      skipped.push(currentUrl);
+      url = nextPageUrl(currentUrl);
     }
     if (url && collected.size < TARGET) await sleep(PAGE_DELAY_MS);
   }
@@ -153,8 +188,8 @@ async function main() {
 }
 
 main()
-    .catch((error) => {
-        console.error("import failed:", error instanceof Error ? error.message : error)
-        process.exitCode = 1
-    })
-    .finally(() => mongoose.disconnect());
+  .catch((error) => {
+    console.error("import failed:", error instanceof Error ? error.message : error);
+    process.exitCode = 1;
+  })
+  .finally(() => mongoose.disconnect());
